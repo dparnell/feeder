@@ -55,6 +55,7 @@ if(count($_GET)>0) {
           position: absolute;
           top: 4pt;
           left: 4pt;
+          z-index: 1000;
       }
 
       #items {
@@ -67,15 +68,15 @@ if(count($_GET)>0) {
           margin-right: 1em;
       }
 
-      .unread {
+      .unread-item {
           font-weight: bold;
       }
 
-      .read {
+      .read-item {
           color: #ccc;
       }
 
-      .read a {
+      .read-item a {
           color: #ccc;
       }
 
@@ -84,7 +85,6 @@ if(count($_GET)>0) {
   </head>
 
   <body>
-    <i class="icon-refresh icon-white" id="loading-indicator"></i>
     <div class="navbar navbar-inverse navbar-fixed-top">
       <div class="navbar-inner">
         <div class="container">
@@ -93,6 +93,8 @@ if(count($_GET)>0) {
             <ul class="nav">
               <li class="active"><a href="#">Home</a></li>
               <li><a id="config" href="#config-box" data-toggle="modal">Configuration</a></li>
+              <li><a id="mark-all-as-read" href="#">Mark All As Read</a></li>
+              <li><a id="refresh" href="#">Refresh</a></li>
               <li><a href="#about-box" data-toggle="modal">About</a></li>
             </ul>
           </div><!--/.nav-collapse -->
@@ -142,6 +144,8 @@ if(count($_GET)>0) {
       </div>
     </div>
 
+    <i class="icon-refresh icon-white" id="loading-indicator"></i>
+
     <script type="text/javascript">
       var UPDATE_TIME = 15*60*1000;  // 15 minutes
       var db;
@@ -160,7 +164,7 @@ if(count($_GET)>0) {
               tx.executeSql('update items set read_at=? where id=?', [Date.now(), event.target.id]);
           });
 
-          $('#item-'+event.target.id).removeClass('unread').addClass('read');
+          $('#item-'+event.target.id).removeClass('unread-item').addClass('read-item');
 
           return true;
       }
@@ -168,7 +172,6 @@ if(count($_GET)>0) {
       function update_feed_display(include_read) {
           var sql = "select name, i.* from items i join feeds f on f.id=i.feed_id"
           if(!include_read) {
-          } else {
               sql = sql + " where read_at is null";
           }
           sql = sql + " order by published_at";
@@ -184,12 +187,20 @@ if(count($_GET)>0) {
                       
                       if(document.getElementById('item-'+item.id) == null) {
                           var klass = item.read_at ? 'read-item' : 'unread-item';
-                          items.append($('<li id="item-'+item.id+'" class="row '+klass+'"><span class="feed-name span2">'+item.name+'</span><a href="'+item.url+'" id="'+item.id+'" tatget="_blank">'+item.title+'</a></li>'));
+                          items.prepend($('<li id="item-'+item.id+'" class="row '+klass+'"><span class="feed-name span2">'+item.name+'</span><a href="'+item.url+'" id="'+item.id+'" tatget="_blank">'+item.title+'</a></li>'));
                           $('#'+item.id).click(item_clicked);
                       }
                   }
               });
           });
+      }
+
+      function mark_all_as_read() {
+          db.transaction(function (tx) {                  
+              tx.executeSql('update items set read_at=? where read_at is null', [Date.now()]);
+          });
+
+          $('li').removeClass('unread-item').addClass('read-item');
       }
 
       function refresh_next_feed() {
@@ -270,7 +281,12 @@ if(count($_GET)>0) {
           $('#config').click(function() {
               xml_import_data = null;
           });
-          
+
+          $('#mark-all-as-read').click(mark_all_as_read);
+          $('#refresh').click(refresh_feeds);
+
+          window.setInterval(refresh_feeds, 1000*60*5);
+
           $('#apply-config').click(function() {
               $('#config-box').modal('hide');
               if(xml_import_data) {
