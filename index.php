@@ -77,7 +77,7 @@ if(count($_GET)>0) {
       }
 
       .read-item a {
-          color: #ccc;
+          color: #999;
       }
 
 
