@@ -51,13 +51,6 @@ if(count($_GET)>0) {
         margin-top: 60px;
       }
 
-      #loading-indicator {
-          position: absolute;
-          top: 4pt;
-          left: 4pt;
-          z-index: 1000;
-      }
-
       #items {
           list-style-type: none;
       }
@@ -143,8 +136,6 @@ if(count($_GET)>0) {
         <button id="apply-config" class="btn btn-primary">Save changes</button>
       </div>
     </div>
-
-    <i class="icon-refresh icon-white" id="loading-indicator"></i>
 
     <script type="text/javascript">
       var UPDATE_TIME = 15*60*1000;  // 15 minutes
@@ -329,12 +320,25 @@ if(count($_GET)>0) {
           }
       });
 
+      var favicon;
+
+      function set_favicon(data) {
+          if(!favicon) {
+              favicon = document.createElement('link');
+              favicon.rel = 'shortcut icon';
+              favicon.href = data;
+              document.getElementsByTagName('head')[0].appendChild(favicon);
+          } else {
+              favicon.href = data;
+          }
+      }
+
       $(document).ajaxSend(function(event, request, settings) {
-          $('#loading-indicator').show();
+          set_favicon("data:image/gif;base64,R0lGODlhEAAQAPQAAP///yJ/I/j7+FKbU5TBlCeCKEKSQ9vq27PTszWKNYi6iHqyeufx56XLps3izWCjYWyqbQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh/hpDcmVhdGVkIHdpdGggYWpheGxvYWQuaW5mbwAh+QQJCgAAACwAAAAAEAAQAAAFUCAgjmRpnqUwFGwhKoRgqq2YFMaRGjWA8AbZiIBbjQQ8AmmFUJEQhQGJhaKOrCksgEla+KIkYvC6SJKQOISoNSYdeIk1ayA8ExTyeR3F749CACH5BAkKAAAALAAAAAAQABAAAAVoICCKR9KMaCoaxeCoqEAkRX3AwMHWxQIIjJSAZWgUEgzBwCBAEQpMwIDwY1FHgwJCtOW2UDWYIDyqNVVkUbYr6CK+o2eUMKgWrqKhj0FrEM8jQQALPFA3MAc8CQSAMA5ZBjgqDQmHIyEAIfkECQoAAAAsAAAAABAAEAAABWAgII4j85Ao2hRIKgrEUBQJLaSHMe8zgQo6Q8sxS7RIhILhBkgumCTZsXkACBC+0cwF2GoLLoFXREDcDlkAojBICRaFLDCOQtQKjmsQSubtDFU/NXcDBHwkaw1cKQ8MiyEAIfkECQoAAAAsAAAAABAAEAAABVIgII5kaZ6AIJQCMRTFQKiDQx4GrBfGa4uCnAEhQuRgPwCBtwK+kCNFgjh6QlFYgGO7baJ2CxIioSDpwqNggWCGDVVGphly3BkOpXDrKfNm/4AhACH5BAkKAAAALAAAAAAQABAAAAVgICCOZGmeqEAMRTEQwskYbV0Yx7kYSIzQhtgoBxCKBDQCIOcoLBimRiFhSABYU5gIgW01pLUBYkRItAYAqrlhYiwKjiWAcDMWY8QjsCf4DewiBzQ2N1AmKlgvgCiMjSQhACH5BAkKAAAALAAAAAAQABAAAAVfICCOZGmeqEgUxUAIpkA0AMKyxkEiSZEIsJqhYAg+boUFSTAkiBiNHks3sg1ILAfBiS10gyqCg0UaFBCkwy3RYKiIYMAC+RAxiQgYsJdAjw5DN2gILzEEZgVcKYuMJiEAOwAAAAAAAAAAAA==");
       });
       
       $(document).ajaxComplete(function(event, request, settings) {
-          $('#loading-indicator').hide();
+          set_favicon("data:image/gif;base64,R0lGODlhEAAQAKUAAAQCBISChMTCxFxeXKSipOTm5BweHGxubJSSlPT29BQWFMzOzLy6vAwKDIyKjGRmZOzu7CwqLHR2dMzKzKyurJyanPz+/AQGBISGhMTGxGRiZKSmpOzq7CQiJHRydJSWlPz6/BwaHNTS1Ly+vAwODIyOjGxqbPTy9DQyNHx6fP///wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAEAACoALAAAAAAQABAAAAaVQJVwSCwaQaPKRwAyDgkGQKdzUVSch0sKIuRgGo8i4SIocIiCy1UICgVUKUCEMnQomqoR4FxYYEgSQhAXDEIVHUISFyYZJARCESVCH4hCExEDCB1NkUJpZxsRCwALFyKDhSogChgqGR4WBwsmCyUKCUMVZEYTDQhFJhcOXConJQ0DFkYVChcREVUIeEcMJQgMuE7aRUEAOw==");
       });
     </script>
   </body>
