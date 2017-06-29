@@ -95,7 +95,7 @@ if(count($_GET)>0) {
                             <li><a id="mark-all-as-read" href="#">Mark All As Read</a></li>
                             <li><a id="refresh" href="#">Refresh</a></li>
                             <li><a href="#about-box" data-toggle="modal">About</a></li>
-                            <li><div class="form-search"><input type="text" id="search" class="input-medium search-query" placeholder="Search">/></div></li>
+                            <li><div class="form-search"><input type="text" id="search" class="input-medium search-query" placeholder="Search"></div></li>
                         </ul>
                     </div><!--/.nav-collapse -->
                 </div>
@@ -191,6 +191,10 @@ if(count($_GET)>0) {
          }
 
          function update_feed_display(e) {
+             if(e) {
+                 items.html("Searching...");
+             }
+
              var search = $('#search').val();
              var sql = "select name, i.* from items i join feeds f on f.id=i.feed_id"
 
