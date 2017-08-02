@@ -3,27 +3,34 @@ if(count($_POST)>0) {
     header('Content-type: application/json');
     $cmd = $_POST['cmd'];
     $db = new SQLite3("db/db.sqlite");
+    $db->busyTimeout(60000);
 
     if($cmd == 'init') {
         $db->exec('CREATE TABLE IF NOT EXISTS feeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name, url, last_update integer)');
         $db->exec('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, feed_id int, title, url, published_at integer, read_at integer)');
-        $result = "OK";
+        $db->exec('CREATE INDEX IF NOT EXISTS items_by_feed ON items (feed_id)');
+
+        $result = true;
     } else if($cmd == "all_read") {
-        $db->exec("update items set read_at=".time()." where read_at is null");
-        $result = "OK";
+        $result = $db->exec("update items set read_at=".time()." where read_at is null");
     } else if($cmd == "add") {
         $feed_id = intval($_POST["feed_id"]);
         $items = json_decode($_POST["items"]);
         $result = 0;
         $db->exec('update feeds set last_update='.time().' where id='.$feed_id);
 
+        $existing_urls = [];
+        $rs = $db->query("select url from items where feed_id=".$feed_id);
+        while($row = $rs->fetchArray(SQLITE3_NUM)) {
+            $existing_urls[$row[0]] = true;
+        }
+
         while($item = array_pop($items)) {
             $title = $db->escapeString($item[0]);
             $url = $db->escapeString($item[1]);
             $published_at = intval($item[2]);
 
-            $count = $db->querySingle("select count(*) c from items where feed_id=".$feed_id." and url='".$url."'");
-            if($count == 0) {
+            if(!array_key_exists($url, $existing_urls)) {
                 $sql = "insert into items (feed_id, title, url, published_at) values (".$feed_id.",'".$title."','".$url."',".$published_at.")";
                 // error_log($sql);
                 $db->exec($sql);
@@ -31,8 +38,7 @@ if(count($_POST)>0) {
             }
         }
     } else if($cmd == "read") {
-        $db->exec("update items set read_at=".time()." where id=".intval($_POST["item_id"]));
-        $result = "OK";
+        $result = $db->exec("update items set read_at=".time()." where id=".intval($_POST["item_id"]));
     } else if($cmd == "add_feeds") {
         $feeds = json_decode($_POST['feeds']);
         $result = 0;
@@ -77,6 +83,7 @@ if(count($_POST)>0) {
         header('Content-type: application/json');
         $cmd = $_GET['cmd'];
         $db = new SQLite3("db/db.sqlite");
+        $db->busyTimeout(60000);
 
         if($cmd == "feeds") {
             $sql = "select * from feeds";
@@ -109,9 +116,9 @@ if(count($_POST)>0) {
     <head>
         <title>Feeder</title>
 
-        <link href="http://netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/css/bootstrap-combined.min.css" rel="stylesheet"></link>
-        <script src="http://code.jquery.com/jquery-1.9.1.min.js"></script>
-        <script src="http://netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/js/bootstrap.min.js"></script>
+        <link href="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/css/bootstrap-combined.min.css" rel="stylesheet"></link>
+        <script src="//code.jquery.com/jquery-1.9.1.min.js"></script>
+        <script src="//netdna.bootstrapcdn.com/twitter-bootstrap/2.3.1/js/bootstrap.min.js"></script>
 
         <style>
          body {
@@ -247,7 +254,7 @@ if(count($_POST)>0) {
         </div>
 
         <script type="text/javascript">
-         var UPDATE_TIME = 15*60*1000;  // 15 minutes
+         var UPDATE_TIME = 15*60;
          var db;
          var to_update = [];
 
@@ -275,7 +282,7 @@ if(count($_POST)>0) {
 
              var search = $('#search').val();
 
-             $.ajax({url: "?cmd=items", data: {search: search}}).then(function(result) {
+             return $.ajax({url: "?cmd=items", data: {search: search}}).then(function(result) {
                  var rows = result.rows;
                  var i, L, item;
 
@@ -329,13 +336,13 @@ if(count($_POST)>0) {
                          }
                      });
 
-                     return $.ajax({method: 'POST', data: {cmd: "add", feed_id: feed.id, items: JSON.stringify(to_insert)}});
-                 }).always(function() {
+                     return $.ajax({method: 'POST', data: {cmd: "add", feed_id: feed.id, items: JSON.stringify(to_insert)}}).then(function(_ignored) { update_feed_display() });
+                 }).then(function() {
                      window.setTimeout(refresh_next_feed, Math.floor(Math.random()*1000+100));
-                 });
+                 }).fail(refresh_next_feed);
+             } else {
+                 update_feed_display();
              }
-
-             update_feed_display();
          }
 
          function refresh_feeds() {
