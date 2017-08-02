@@ -1,27 +1,108 @@
 <?php
-if(count($_GET)>0) {
-    $q = $_GET['q'];
-    $CACHE_TIME = 60*15; /* 15 minutes */
+if(count($_POST)>0) {
+    header('Content-type: application/json');
+    $cmd = $_POST['cmd'];
+    $db = new SQLite3("db/db.sqlite");
 
-    if(preg_match("/https?:\/\//i", $q)) {
-        $hash = md5($q);
-        $cache_file = "cache/".$hash;
-        if(file_exists($cache_file) && (filemtime($cache_file) + $CACHE_TIME > time())) {
-            $data = file_get_contents($cache_file);
-        } else {
-            $data = file_get_contents($q);
-            if(!file_exists("cache")) {
-                mkdir("cache");
+    if($cmd == 'init') {
+        $db->exec('CREATE TABLE IF NOT EXISTS feeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name, url, last_update integer)');
+        $db->exec('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, feed_id int, title, url, published_at integer, read_at integer)');
+        $result = "OK";
+    } else if($cmd == "all_read") {
+        $db->exec("update items set read_at=".time()." where read_at is null");
+        $result = "OK";
+    } else if($cmd == "add") {
+        $feed_id = intval($_POST["feed_id"]);
+        $items = json_decode($_POST["items"]);
+        $result = 0;
+        $db->exec('update feeds set last_update='.time().' where id='.$feed_id);
+
+        while($item = array_pop($items)) {
+            $title = $db->escapeString($item[0]);
+            $url = $db->escapeString($item[1]);
+            $published_at = intval($item[2]);
+
+            $count = $db->querySingle("select count(*) c from items where feed_id=".$feed_id." and url='".$url."'");
+            if($count == 0) {
+                $sql = "insert into items (feed_id, title, url, published_at) values (".$feed_id.",'".$title."','".$url."',".$published_at.")";
+                // error_log($sql);
+                $db->exec($sql);
+                $result++;
             }
-            file_put_contents($cache_file, $data);
+        }
+    } else if($cmd == "read") {
+        $db->exec("update items set read_at=".time()." where id=".intval($_POST["item_id"]));
+        $result = "OK";
+    } else if($cmd == "add_feeds") {
+        $feeds = json_decode($_POST['feeds']);
+        $result = 0;
+        while($feed = array_pop($feeds)) {
+            $title = $db->escapeString($feed[0]);
+            $url = $db->escapeString($feed[1]);
+
+            $db->exec("insert into feeds (name, url, last_update) values ('".$title."', '".$url."', 0)");
+        }
+    } else {
+        $result = "UNKNOWN COMMAND";
+    }
+
+    echo json_encode($result);
+    exit(0);
+} else if(count($_GET)>0) {
+    if(array_key_exists('q', $_GET)) {
+        $q = $_GET['q'];
+        $CACHE_TIME = 60*15; /* 15 minutes */
+
+        if(preg_match("/https?:\/\//i", $q)) {
+            $hash = md5($q);
+            $cache_file = "cache/".$hash;
+            if(file_exists($cache_file) && (filemtime($cache_file) + $CACHE_TIME > time())) {
+                $data = file_get_contents($cache_file);
+            } else {
+                $data = file_get_contents($q);
+                if(!file_exists("cache")) {
+                    mkdir("cache");
+                }
+                file_put_contents($cache_file, $data);
+            }
+
+            header('Content-type: text/xml');
+
+            echo $data;
+            exit(0);
+        } else {
+            exit(500);
+        }
+    } else {
+        header('Content-type: application/json');
+        $cmd = $_GET['cmd'];
+        $db = new SQLite3("db/db.sqlite");
+
+        if($cmd == "feeds") {
+            $sql = "select * from feeds";
+        } else if($cmd == "items") {
+            $sql = "select name, i.* from items i join feeds f on f.id=i.feed_id";
+            $search = $_GET['search'];
+            if($search) {
+                $sql = $sql." where lower(i.title) like '%".str_replace("'", "''", $search)."%'";
+            } else {
+                $sql = $sql." where read_at is null";
+            }
+
+            $sql = $sql." order by published_at limit 1000";
+
         }
 
-        header('Content-type: text/xml');
+        $rows = [];
+        $rs = $db->query($sql);
+        while($row = $rs->fetchArray(SQLITE3_ASSOC)) {
+            array_push($rows, $row);
+        }
 
-        echo $data;
+        $result = array( "time" => time(), "rows" => $rows );
+
+        echo json_encode($result);
         exit(0);
-    } else {
-        exit(500);
     }
 }
 ?><html>
@@ -120,8 +201,6 @@ if(count($_GET)>0) {
             </div>
             <div class="modal-body">
                 <p>This is a simple HTML 5 single file RSS feed reader written in response to Google Reader closing down.  It contains only the features I want and nothing more.</p>
-                <p>Feeder requires a modern browser supporting HTML5 WebSQL such as Chrome or Safari.</p>
-                <p>Maybe I might update the code to use IndexedDB, if I can be bothered.</p>
             </div>
             <div class="modal-footer">
                 <a href="#" data-dismiss="modal" class="btn">Close</a>
@@ -181,103 +260,78 @@ if(count($_GET)>0) {
          }
 
          function item_clicked(event) {
-             db.transaction(function (tx) {
-                 tx.executeSql('update items set read_at=? where id=?', [Date.now(), event.target.id]);
+             $.ajax({method: "POST", data: {cmd: "read", item_id: event.target.id}}).then(function() {
+                 $('#item-'+event.target.id).removeClass('unread-item').addClass('read-item');
              });
-
-             $('#item-'+event.target.id).removeClass('unread-item').addClass('read-item');
 
              return true;
          }
 
          function update_feed_display(e) {
+             var $items = $('#items');
              if(e) {
-                 items.html("Searching...");
+                 $items.html("Searching...");
              }
 
              var search = $('#search').val();
-             var sql = "select name, i.* from items i join feeds f on f.id=i.feed_id"
 
-             if(search) {
-                 sql = sql + " where lower(i.title) like '%" + search.replace("'", "''") + "%'";
-             } else {
-                 sql = sql + " where read_at is null";
-             }
+             $.ajax({url: "?cmd=items", data: {search: search}}).then(function(result) {
+                 var rows = result.rows;
+                 var i, L, item;
 
-             sql = sql + " order by published_at limit 1000";
+                 if(e) {
+                     $items.html("");
+                 }
 
-             db.transaction(function (tx) {
-                 tx.executeSql(sql, [], function(tx, results) {
-                     var i, L, item;
-                     var items = $('#items');
+                 L = rows.length;
+                 for(i=0; i < L; i++) {
+                     item = rows[i];
 
-                     if(e) {
-                         items.html("");
+                     if(document.getElementById('item-'+item.id) == null) {
+                         var klass = item.read_at ? 'read-item' : 'unread-item';
+                         $items.prepend($('<li id="item-'+item.id+'" class="row '+klass+'"><span class="feed-name span2">'+item.name+'</span><a href="'+item.url+'" id="'+item.id+'" tatget="_blank">'+item.title+'</a></li>'));
+                         $('#'+item.id).click(item_clicked);
                      }
+                 }
 
-                     L = results.rows.length;
-                     for(i=0; i<L; i++) {
-                         item = results.rows.item(i);
-
-                         if(document.getElementById('item-'+item.id) == null) {
-                             var klass = item.read_at ? 'read-item' : 'unread-item';
-                             items.prepend($('<li id="item-'+item.id+'" class="row '+klass+'"><span class="feed-name span2">'+item.name+'</span><a href="'+item.url+'" id="'+item.id+'" tatget="_blank">'+item.title+'</a></li>'));
-                             $('#'+item.id).click(item_clicked);
-                         }
-                     }
-                 });
              });
          }
 
          function mark_all_as_read() {
-             db.transaction(function (tx) {
-                 tx.executeSql('update items set read_at=? where read_at is null', [Date.now()]);
+             $.ajax({method: 'POST', data: {cmd: 'all_read'}}).then(function() {
+                 $('li').removeClass('unread-item').addClass('read-item');
              });
-
-             $('li').removeClass('unread-item').addClass('read-item');
          }
 
          function refresh_next_feed() {
              var feed = to_update.pop();
 
              if(feed) {
-                 $.ajax({
-                     url: "?q="+encodeURIComponent(feed.url),
-                     cache: false,
-                     success: function(data, status, req) {
-                         db.transaction(function (tx) {
-                             tx.executeSql('update feeds set last_update=? where id=?', [Date.now(), feed.id]);
-                             var urls_seen = [];
+                 $.ajax({url: "?q="+encodeURIComponent(feed.url), cache: false}).then(function(data) {
+                     var to_insert = [];
+                     $(data).find('item,entry').each(function(i, item) {
+                         var title = $(item).find('title').text();
+                         var url = null;
+                         var published_at = Date.parse($(item).find('published,pubDate').text());
 
-                             $(data).find('item,entry').each(function(i, item) {
-                                 var title = $(item).find('title').text();
-                                 var url = null;
-                                 var published_at = Date.parse($(item).find('published,pubDate').text());
-
-                                 $(item).find('link').each(function(i, link) {
-                                     if($(link).attr('rel') == 'alternate') {
-                                         url = $(link).attr('href');
-                                     } else {
-                                         if(url == null) {
-                                             url = $(link).text();
-                                         }
-                                     }
-                                 });
-
-                                 if(url) {
-                                     urls_seen.push(url);
-                                     tx.executeSql('select count(*) c from items where feed_id=? and url=?', [feed.id, url], function(tx, results) {
-                                         if(results.rows.item(0).c == 0) {
-                                             tx.executeSql('insert into items (feed_id, title, url, published_at) values (?,?,?,?)', [feed.id, title, url, published_at]);
-                                         }
-                                     }, function() { console.error(arguments) });
+                         $(item).find('link').each(function(i, link) {
+                             if($(link).attr('rel') == 'alternate') {
+                                 url = $(link).attr('href');
+                             } else {
+                                 if(url == null) {
+                                     url = $(link).text();
                                  }
-                             });
+                             }
                          });
-                     },
-                     complete: function() {
-                         window.setTimeout(refresh_next_feed, Math.floor(Math.random()*1000+100));
-                     }
+
+                         if(url) {
+                             to_insert.push([title, url, published_at]);
+                         }
+                     });
+
+                     return $.ajax({method: 'POST', data: {cmd: "add", feed_id: feed.id, items: JSON.stringify(to_insert)}});
+                 }).always(function() {
+                     window.setTimeout(refresh_next_feed, Math.floor(Math.random()*1000+100));
                  });
              }
 
@@ -286,25 +340,25 @@ if(count($_GET)>0) {
 
          function refresh_feeds() {
              if(to_update.length == 0) {
-                 db.transaction(function (tx) {
-                     tx.executeSql('select * from feeds', [], function(_tx, results) {
-                         if(results.rows == null || results.rows.length == 0) {
-                             error('You have no feeds', 'Use the Configure option above to add some feeds');
-                         } else {
-                             var i;
-                             var now = Date.now();
+                 $.ajax({url: "?cmd=feeds"}).then(function(result) {
+                     var now = result.time;
+                     var rows = result.rows;
+                     if(rows == null || rows.length == 0) {
+                         error('You have no feeds', 'Use the Configure option above to add some feeds');
+                     } else {
+                         var i;
 
-                             for(i=0; i<results.rows.length; i++) {
-                                 var feed = results.rows.item(i);
+                         for(i=0; i < rows.length; i++) {
+                             var feed = rows[i];
 
-                                 if(feed.last_update + UPDATE_TIME < now) {
-                                     to_update.unshift(feed);
-                                 }
+                             if(feed.last_update + UPDATE_TIME < now) {
+                                 to_update.unshift(feed);
                              }
-
-                             refresh_next_feed();
                          }
-                     });
+
+                         refresh_next_feed();
+                     }
+
                  });
              }
          }
@@ -326,14 +380,14 @@ if(count($_GET)>0) {
                  $('#config-box').modal('hide');
                  if(xml_import_data) {
                      var xml = $.parseXML(xml_import_data);
+                     var to_insert = [];
+                     $(xml).find('outline').each(function(_i, e) {
+                         if($(e).attr('type') == 'rss') {
+                             to_insert.push([$(e).attr('title'), $(e).attr('xmlUrl')]);
+                         }
+                     })
 
-                     db.transaction(function (tx) {
-                         $(xml).find('outline').each(function(_i, e) {
-                             if($(e).attr('type') == 'rss') {
-                                 tx.executeSql('insert into feeds (name, url, last_update) values (?, ?, 0)', [$(e).attr('title'), $(e).attr('xmlUrl')]);
-                             }
-                         })
-                     });
+                     $.ajax({method: 'POST', data: {cmd: 'add_feeds', feeds: JSON.stringify(to_insert)}});
                  }
              });
 
@@ -342,18 +396,15 @@ if(count($_GET)>0) {
                  var name = $('#feed-name').val();
                  var url = $('#feed-url').val();
                  if(name && url) {
-                     db.transaction(function (tx) {
-                         tx.executeSql('insert into feeds (name, url, last_update) values (?, ?, 0)', [name, url]);
-                     });
-                     $('#feed-name').val('');
-                     $('#feed-url').val('');
+                     var to_insert = [[name, url]];
+                     $.ajax({method: 'POST', data: {cmd: 'add_feeds', feeds: JSON.stringify(to_insert)}});
                  }
              });
 
              $('#xml-import').change(function (evt) {
                  // check that the browser supports the file API
                  if (evt.target.files === undefined) {
-                     alert("Your browser doesn't support the required APIs.  Get a better browser!");
+                     alert("Your browser doesn't support the required APIs. Get a better browser!");
                      return undefined;
                  }
 
@@ -364,17 +415,7 @@ if(count($_GET)>0) {
                  reader.readAsText(f);
              });
 
-             if(window.openDatabase) {
-                 db = openDatabase('feeder', '1.0', 'Feeder DB', 10 * 1024 * 1024);
-                 db.transaction(function (tx) {
-                     tx.executeSql('CREATE TABLE IF NOT EXISTS feeds (id INTEGER PRIMARY KEY AUTOINCREMENT, name, url, last_update integer)');
-                     tx.executeSql('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY AUTOINCREMENT, feed_id int, title, url, published_at integer, read_at integer)');
-                 });
-
-                 refresh_feeds();
-             } else {
-                 error('Time to get a new browser', 'Your browser does not support the necessary APIs.  Get a better browser!');
-             }
+             $.ajax({method: 'POST', data: {cmd: 'init'}}).then(refresh_feeds);
          });
 
          var favicon;
